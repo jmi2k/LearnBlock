@@ -225,18 +225,29 @@ class Call(Node):
 
     def typecheck(self, ctx):
         # TODO: check that the arguments match the function signature
-        return all((node.typecheck(ctx) for node in self.args))
+        return all([node.typecheck(ctx) for node in self.args])
 
     @property
     def used_vars(self):
         return {var for arg in self.args
                     for var in arg.used_vars}
 
+    """
+    @staticmethod
+    def parse_failed(src, location, expr, error):
+        print('+--------------+')
+        print('| Parse error! |')
+        print('+--------------+')
+        print(f'  line {lineno(location, src)}')
+        print(f'  col {col(location, src)}')
+        raise ParseFatalException
+    """
+
 CALL = (
     Suppress(Literal('function'))
-    + Suppress(DOT)
-    + IDENTIFIER
-    + OPAR
+    - Suppress(DOT)
+    - IDENTIFIER
+    - OPAR
     - Group(Optional(delimitedList(OPERATION)))
     - CPAR
     + ENDLOC
@@ -258,7 +269,7 @@ class SimpleCall(Node):
 
     def typecheck(self, ctx):
         # TODO: check that the arguments match the function signature
-        return all((node.typecheck(ctx) for node in self.args))
+        return all([node.typecheck(ctx) for node in self.args])
 
     @property
     def used_vars(self):
@@ -465,7 +476,7 @@ class If(Node):
     def typecheck(self, ctx):
         _, co = self.condition.signature(ctx)
 
-        return ctx.unify(self.condition, co, bool) and all((node.typecheck(ctx) for node in self.body))
+        return ctx.unify(self.condition, co, bool) and all([node.typecheck(ctx) for node in self.body])
 
     @property
     def used_vars(self):
@@ -499,7 +510,7 @@ class ElseIf(Node):
     def typecheck(self, ctx):
         _, co = self.condition.signature(ctx)
 
-        return ctx.unify(self.condition, co, bool) and all((node.typecheck(ctx) for node in self.body))
+        return ctx.unify(self.condition, co, bool) and all([node.typecheck(ctx) for node in self.body])
 
     @property
     def used_vars(self):
@@ -529,7 +540,7 @@ class Else(Node):
         return output
 
     def typecheck(self, ctx):
-        return all((node.typecheck(ctx) for node in self.body))
+        return all([node.typecheck(ctx) for node in self.body])
 
     @property
     def used_vars(self):
@@ -546,7 +557,7 @@ ELSEIF << (
     - COLON
     - LINES
     + ENDLOC
-).setParseAction(ElseIf)
+).setParseAction(ElseIf).setResultsName('ELSEIF')
 
 ELSE << (
     INDENT
@@ -554,7 +565,7 @@ ELSE << (
     - COLON
     - LINES
     + ENDLOC
-).setParseAction(Else)
+).setParseAction(Else).setResultsName('ELSE')
 
 IF = (
     INDENT
@@ -565,7 +576,7 @@ IF = (
     - Group(ZeroOrMore(ELSEIF) + Optional(ELSE))
     - END
     + ENDLOC
-).setParseAction(If)
+).setParseAction(If).setResultsName('IF')
 
 """-----------------LOOP----------------------------"""
 class While(Node):
@@ -591,7 +602,7 @@ class While(Node):
     def typecheck(self, ctx):
         _, co = self.condition.signature(ctx)
 
-        return ctx.unify(self.condition, co, bool) and all((node.typecheck(ctx) for node in self.body))
+        return ctx.unify(self.condition, co, bool) and all([node.typecheck(ctx) for node in self.body])
 
     @property
     def used_vars(self):
@@ -674,7 +685,7 @@ class When(Node):
     def typecheck(self, ctx):
         _, co = self.right.signature(ctx)
 
-        return ctx.unify(self.right, co, bool) and all((node.typecheck(ctx) for node in self.body))
+        return ctx.unify(self.right, co, bool) and all([node.typecheck(ctx) for node in self.body])
 
 BLOQUEWHENCOND = (
     INDENT
@@ -759,7 +770,7 @@ class Def(Node):
         return output
 
     def typecheck(self, ctx):
-        return all((node.typecheck(ctx) for node in self.body))
+        return all([node.typecheck(ctx) for node in self.body])
 
     @property
     def used_vars(self):
@@ -809,7 +820,7 @@ class Main(Node):
         return output
 
     def typecheck(self, ctx):
-        return all((node.typecheck(ctx) for node in self.body))
+        return all([node.typecheck(ctx) for node in self.body])
 
     @property
     def used_vars(self):
@@ -842,7 +853,7 @@ class Program(Node):
         return output
 
     def typecheck(self, ctx):
-        return all((node.typecheck(ctx) for node in self.nodes))
+        return all([node.typecheck(ctx) for node in self.nodes])
 
     @property
     def used_vars(self):
@@ -1022,18 +1033,12 @@ class Parser:
     def parse_str(text):
         return LB.parseString(text, parseAll = True)[0]
 
-    @staticmethod
-    def parse_file(file):
-        with open(file) as f:
-            text = f.read()
-            return Parser.parse_str(text)
-
 # ini = []
 usedFunctions = []
 
 def parserLearntBotCodeOnlyUserFuntion(code):
     text = ""
-    # TODO: check for errors
+    # TODO: check for notifications
     try:
         tree = Parser.parse_str(code)
         text = PythonGenerator.generate(tree)
@@ -1044,50 +1049,55 @@ def parserLearntBotCodeOnlyUserFuntion(code):
 def parserLearntBotCode(inputFile, outputFile, client_name):
     global usedFunctions
 
-    errors = []
+    notifications = []
 
-    try:
-        output = Parser.parse_file(inputFile)
-        mismatches = Typechecker.check(output)
+    with open(inputFile) as f:
+        code = f.read()
 
-        text = elapsedTimeFunction.replace("<TABHERE>", '\t')
-        text += signalHandlerFunction.replace("<TABHERE>", '\t')
-        text += PythonGenerator.generate(output)
-        text += endOfProgram
+        try:
+            output = Parser.parse_str(code)
+            mismatches = Typechecker.check(output)
 
-        for mismatch in mismatches:
-            node, found, expected = mismatch
+            text = elapsedTimeFunction.replace("<TABHERE>", '\t')
+            text += signalHandlerFunction.replace("<TABHERE>", '\t')
+            text += PythonGenerator.generate(output)
+            text += endOfProgram
 
-            errors.append({
-                'level': 'warning',
-                'message': f'type mismatch: expected {expected.__name__}, got {found.__name__}',
-                'from': node.start,
-                'to': node.end,
+            for mismatch in mismatches:
+                node, found, expected = mismatch
+
+                notifications.append({
+                    'src': code,
+                    'level': 'info',
+                    'message': 'type mismatch: expected %s, got %s' % (expected.__name__, found.__name__),
+                    'from': node.start,
+                    'to': node.end,
+                })
+
+            header = HEADER.replace('<Client>', client_name).replace("<USEDCALLS>", str(usedFunctions)).replace("<TABHERE>", '\t')
+
+            with open(outputFile, 'w') as f:
+                f.write(header)
+                f.write(text)
+
+            return header + text, notifications
+        except ParseException as e:
+            traceback.print_exc()
+
+            notifications.append({
+                'src': code,
+                'level': 'error',
+                'message': "cannot parse the source code",
+                'from': (e.lineno, e.col, e.loc),
+                'to': None,
             })
 
-        header = HEADER.replace('<Client>', client_name).replace("<USEDCALLS>", str(usedFunctions)).replace("<TABHERE>", '\t')
-
-        with open(outputFile, 'w') as f:
-            f.write(header)
-            f.write(text)
-
-        return header + text, errors
-    except Exception as e:
-        traceback.print_exc()
-
-        errors.append({
-            'level': 'error',
-            'message': "cannot parse the source code",
-            'from': (e.lineno, e.col, e.loc),
-            'to': None,
-        })
-
-        return None, errors
+            return None, notifications
 
 def parserLearntBotCodeFromCode(code, name_client):
     global usedFunctions
 
-    errors = []
+    notifications = []
 
     try:
         output = Parser.parse_str(code)
@@ -1102,62 +1112,39 @@ def parserLearntBotCodeFromCode(code, name_client):
         for mismatch in mismatches:
             node, found, expected = mismatch
 
-            errors.append({
+            notifications.append({
+                'src': code,
                 'level': 'warning',
-                'message': f'type mismatch: expected {expected.__name__}, got {found.__name__}',
+                'message': 'type mismatch: expected %s, got %s' % (expected.__name__, found.__name__),
                 'from': node.start,
                 'to': node.end,
             })
 
-        return header + text, errors
+        return header + text, notifications
     except Exception as e:
         traceback.print_exc()
 
-        errors.append({
+        notifications.append({
+            'src': code,
             'level': 'error',
             'message': "cannot parse the source code",
             'from': (e.lineno, e.col, e.loc),
             'to': None,
         })
 
-        return None, errors
+        return None, notifications
 
 if __name__ == "__main__":
     textprueba = """
 
-x = None
-sum = None
-result = None
-otherResult = None
-chainedOps = None
-stressTest = None
-
-def foo():
-    x = 3 or False
-    function.sayHello("Hello. I said: \\"Hello\\".")
-end
 
 main:
-	function.look_floor()
-	while True:
-		if function.is_center_red_line():
-			function.move_straight()
-			function.expressJoy()
-		elif function.is_right_red_line():
-			function.move_right()
-			function.expressJoy()
-		elif function.is_left_red_line():
-			function.move_left()
-			function.expressJoy()
-		else:
-			function.slow_down()
-			function.expressSadness()
-		end
-	end
+    function x()
 end
 
 """
     try:
+        """
         print("Original source code")
         print("====================")
         print()
@@ -1195,6 +1182,8 @@ end
         print()
         print(mismatches)
         print()
+        """
+        parserLearntBotCodeFromCode(textprueba, "robots")
     except Exception as pe:
         print(pe.line)
         print(' ' * (pe.col - 1) + '^')

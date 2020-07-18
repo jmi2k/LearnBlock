@@ -31,6 +31,7 @@ from learnbot_dsl.learnbotCode.parserConfig import configSSH
 from learnbot_dsl.blocksConfig.blocks import *
 from learnbot_dsl.learnbotCode.guiTabLibrary import Library
 from learnbot_dsl.learnbotCode.Highlighter import *
+from learnbot_dsl.learnbotCode.Info import *
 from learnbot_dsl.learnbotCode.help import helper
 from future.standard_library import install_aliases
 from learnbot_dsl.learnbotCode.Parser import HEADER, parserLearntBotCodeFromCode
@@ -162,7 +163,7 @@ class LearnBlock(QtWidgets.QMainWindow):
     index = -1
     pre_sizes = [0, 0]
     dicTables = {}
-    errors = []
+    notifications = []
 
     def __init__(self):
         global signal
@@ -379,7 +380,7 @@ class LearnBlock(QtWidgets.QMainWindow):
 
     def errorPressed(self, item):
         index = self.ui.errorList.indexFromItem(item).row()
-        error = self.errors[index]
+        error = self.notifications[index]
         cursor = self.ui.textCode.textCursor()
 
         start = error['from'][2] if error['from'] else None
@@ -595,7 +596,6 @@ class LearnBlock(QtWidgets.QMainWindow):
         font.setFixedPitch(True)
         font.setPointSize(self.ui.spinBoxLeterSize.value())
         self.ui.textCode.setFont(font)
-        self.ui.textCode.setTextColor(QtCore.Qt.white)
         self.ui.textCode.setCursorWidth(2)
         p = self.ui.textCode.palette()
         p.setColor(self.ui.textCode.viewport().backgroundRole(), QtGui.QColor(51, 51, 51, 255))
@@ -955,44 +955,22 @@ class LearnBlock(QtWidgets.QMainWindow):
                     msgBox.setDefaultButton(QtWidgets.QMessageBox.Ok)
                     msgBox.exec_()
 
-    def formatError(self, error):
-        level = error['level']
-        message = error['message']
-        start = error['from']
-        end = error['to']
-
-        if start == None and end == None:
-            spanMsg = "somewhere"
-        elif end == None:
-            spanMsg = f"from {start[0]}:{start[1]}"
-        elif start == end:
-            spanMsg = f"at {start[0]}:{start[1]}"
-        else:
-            spanMsg = f"from {start[0]}:{start[1]} to {end[0]}:{end[1]}"
-
-        return f"{level}: {message} ({spanMsg})"
-
     def textCodeToPython(self, name_Client):
         textCode = self.ui.textCode.toPlainText()
         try:
-            code, errors = parserLearntBotCodeFromCode(textCode, name_Client)
-            self.errors = errors
+            code, notifications = parserLearntBotCodeFromCode(textCode, name_Client)
+            self.notifications = notifications
             self.ui.pythonCode.clear()
-            if errors:
-
-                errorList = '\n'.join(map(self.formatError, errors))
-                errorMsg = f"Your code is not correct"
-
+            if notifications:
                 msgBox = QtWidgets.QMessageBox()
                 msgBox.setWindowTitle(self.tr("Warning"))
                 msgBox.setIcon(QtWidgets.QMessageBox.Warning)
-                msgBox.setText(self.tr(errorMsg))
-                msgBox.setDetailedText(errorList)
+                msgBox.setText(self.tr("Your code is not correct"))
                 msgBox.setStandardButtons(QtWidgets.QMessageBox.Ok)
                 msgBox.setDefaultButton(QtWidgets.QMessageBox.Ok)
                 msgBox.exec_()
 
-                self.updateErrors()
+                self.updateNotifications()
             else:
                 self.ui.pythonCode.setText(code)
             return code
@@ -1015,19 +993,37 @@ class LearnBlock(QtWidgets.QMainWindow):
             msgBox.exec_()
         return False
 
-    def updateErrors(self):
+    def updateNotifications(self):
         nErr = 0
         nWarn = 0
 
         self.ui.errorList.clear()
 
         for error in self.errors:
+            lines = error['src'].split('\n')
+            start = error['from']
+            end = error['to']
+
             if (error['level'] == 'error'):
                 nErr += 1
             elif (error['level'] == 'warning'):
                 nWarn += 1
 
-            self.ui.errorList.addItem(self.formatError(error))
+            item = QtWidgets.QListWidgetItem(self.ui.errorList)
+
+            info = Info()
+            info.setLevel(error['level'])
+            info.setMessage(error['message'])
+            info.setPosition(error['from'], error['to'])
+            item.setSizeHint(info.sizeHint())
+
+            if not end:
+                info.setSnippet(lines[start[0]-1])
+            else:
+                info.setSnippet('\n'.join(lines[start[0]-1:end[0]]))
+
+            self.ui.errorList.addItem(item)
+            self.ui.errorList.setItemWidget(item, info)
 
     def startSimulatorRobot(self):
         self.scene.stopAllblocks()
